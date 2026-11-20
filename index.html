@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>TenTýpeeek</title>
+  <meta name="description" content="Just Do It">
+  <meta name="theme-color" content="#000000">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@600&family=Space+Grotesk:wght@400;500;700&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.3.1/css/all.min.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="bgimg"></div>
+  <canvas id="bg"></canvas>
+  <canvas id="fx"></canvas>
+
+  <div class="vol" id="vol">
+    <button class="vbtn" id="vi" aria-label="Mute / unmute"><i class="fa-solid fa-volume-high"></i></button>
+    <input type="range" id="vr" min="0" max="1" step="0.01" value="0.7" aria-label="Volume">
+    <span class="vp" id="vp">70</span>
+  </div>
+
+  <main class="wrap" id="app"></main>
+
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
