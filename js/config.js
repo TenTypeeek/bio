@@ -57,8 +57,7 @@ window.CONFIG = {
   ],
 
   badges: [
-    { icon: "fa-solid fa-medal", title: "NNN Survivor 2024", desc: "Survived No Nut November 2024" },
-    { icon: "fa-solid fa-award", title: "NNN Survivor 2025", desc: "Survived No Nut November 2025" },
+    { icon: "fa-solid fa-leaf", title: "November", desc: "Claimed the November seasonal badge." }
   ],
 
   music: {
