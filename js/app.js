@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const C = window.CONFIG || {}, A = C.animations || {}, M = C.music || {};
+  const C = window.CONFIG || {}, A = C.animations || {}, M = C.music || {}, B = C.background || {};
   const $ = s => document.querySelector(s);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const EP = C.emojiPath || "assets/emojis/";
@@ -8,21 +8,54 @@
   const emojify = s => esc(s).replace(/:([a-z0-9_-]+):/gi, (m, n) =>
     `<img class="emoji" src="${EP}${n}.png" alt="${m}" onerror="this.replaceWith(this.alt)">`);
   const fmt = t => Math.floor(t / 60) + ":" + String(Math.floor(t % 60)).padStart(2, "0");
+  const wait = ms => new Promise(r => setTimeout(r, ms));
   Object.keys(A).forEach(k => document.body.classList.toggle("no-" + k, !A[k]));
   document.title = C.title || C.name || document.title;
+  $("#sk-icons").innerHTML = "<i></i>".repeat((C.links || []).length); // skeleton matches your link count
 
-  let vol = 0.7, curAudio = null, muted = false;
+  let vol = 0.7, curAudio = null, muted = false, bgVideo = null;
+
+  /* ---------- loading helpers ---------- */
+  const imgReady = src => new Promise(r => { if (!src) return r(); const i = new Image(); i.onload = i.onerror = () => r(); i.src = src; });
+  const sheetReady = id => new Promise(r => { const l = $(id); if (!l || l.sheet) return r(); l.addEventListener("load", () => r()); l.addEventListener("error", () => r()); });
+  const fontReady = f => (document.fonts ? document.fonts.load(f).catch(() => {}) : Promise.resolve());
+
+  /* ---------- lyrics (.txt or .lrc, lines like "[00:06.75] text") ---------- */
+  function parseLRC(txt) {
+    const out = [];
+    String(txt).replace(/^\uFEFF/, "").split(/\r?\n/).forEach(raw => {
+      const line = raw.trim().replace(/^["\u201C\u201D']+|["\u201C\u201D']+$/g, "");
+      const re = /\[(\d+):(\d+(?:[.:]\d+)?)\]/g, times = [];
+      let m, end = 0;
+      while ((m = re.exec(line))) { times.push(+m[1] * 60 + parseFloat(m[2].replace(":", "."))); end = re.lastIndex; }
+      const text = line.slice(end).trim();
+      if (times.length && text) times.forEach(tm => out.push([Math.round(tm * 100) / 100, text]));
+    });
+    return out;
+  }
+  async function loadLyrics() {
+    let L = M.lyrics || [];
+    if (M.lyricsText && M.lyricsText.trim()) { const p = parseLRC(M.lyricsText); if (p.length) L = p; }
+    else if (M.lyricsFile) {
+      const base = M.lyricsFile.replace(/\.(txt|lrc)$/i, "");
+      for (const url of [M.lyricsFile, base + ".txt", base + ".lrc"].filter((v, i, a) => a.indexOf(v) === i)) {
+        try { const r = await fetch(url); if (r.ok) { const p = parseLRC(await r.text()); if (p.length) { L = p; break; } } } catch (e) {}
+      }
+      if (!L.length) console.warn("Lyrics: no timed lines found in " + M.lyricsFile + " (format: [mm:ss.xx] text)");
+    }
+    const off = +M.lyricsOffset || 0;
+    return L.map(l => [l[0] + off, l[1]]).sort((a, b) => a[0] - b[0]);
+  }
 
   /* ---------- render profile ---------- */
   function render() {
     const langs = C.languages || [];
-    const hasLoc = C.location || langs.length;
     $("#app").innerHTML = `
     <section class="card tilt">
       <div class="top">
         <div>
           <h1 class="name">${emojify(C.name)}</h1>
-          ${hasLoc ? `<div class="loc">
+          ${C.location || langs.length ? `<div class="loc">
             ${C.location ? `<span><i class="fa-solid fa-location-dot"></i>${emojify(C.location)}</span>` : ""}
             ${langs.length ? `<span><i class="fa-solid fa-language"></i>${langs.map(l =>
               `<span class="lang"><img class="emoji" src="${EP}${esc(l.code)}.png" alt="" onerror="this.style.display='none'">${esc(l.name)}</span>`).join("")}</span>` : ""}
@@ -30,7 +63,7 @@
           <p class="bio">${emojify(C.bio)}</p>
         </div>
         <div class="avw"><div class="av">${esc((C.name || "?")[0])}${C.avatar || C.avatarFallback ?
-          `<img src="${esc(C.avatar || C.avatarFallback)}" data-f="${esc(C.avatarFallback || "")}" alt="" referrerpolicy="no-referrer"
+          `<img src="${esc(C.avatar || C.avatarFallback)}" data-f="${esc(C.avatarFallback || "")}" alt="" width="104" height="104" decoding="async" referrerpolicy="no-referrer"
             onerror="if(this.dataset.f){this.src=this.dataset.f;this.dataset.f=''}else this.remove()">` : ""}</div></div>
       </div>
       <div class="links">${(C.links || []).map((l, i) =>
@@ -56,49 +89,13 @@
     </section>` : ""}`;
   }
 
-  /* ---------- lyrics ---------- */
-  // Accepts .txt or .lrc content: "[mm:ss.xx] line". Ignores tags like [ar:..], BOM and surrounding quotes.
-  function parseLRC(txt) {
-    const out = [];
-    String(txt).replace(/^\uFEFF/, "").split(/\r?\n/).forEach(raw => {
-      const line = raw.trim().replace(/^["\u201C\u201D']+|["\u201C\u201D']+$/g, "");
-      const re = /\[(\d+):(\d+(?:[.:]\d+)?)\]/g, times = [];
-      let m, end = 0;
-      while ((m = re.exec(line))) { times.push(+m[1] * 60 + parseFloat(m[2].replace(":", "."))); end = re.lastIndex; }
-      const text = line.slice(end).trim();
-      if (times.length && text) times.forEach(tm => out.push([Math.round(tm * 100) / 100, text]));
-    });
-    return out;
-  }
-
   /* ---------- player ---------- */
-  async function initPlayer() {
-    if (!M.title) return;
-    let L = M.lyrics || [];
-    if (M.lyricsText && M.lyricsText.trim()) {
-      const p = parseLRC(M.lyricsText); if (p.length) L = p;
-    } else if (M.lyricsFile) {
-      const base = M.lyricsFile.replace(/\.(txt|lrc)$/i, "");
-      const tries = [M.lyricsFile, base + ".txt", base + ".lrc"].filter((v, i, a) => a.indexOf(v) === i);
-      for (const url of tries) {
-        try { const r = await fetch(url, { cache: "no-cache" }); if (r.ok) { const p = parseLRC(await r.text()); if (p.length) { L = p; break; } } } catch (e) {}
-      }
-      if (!L.length) console.warn("Lyrics: no timed lines loaded. Check assets/lyrics/song.txt uses [mm:ss.xx] text, and open the page through a web server (not file://).");
-    }
+  function initPlayer(L) {
+    if (!M.title) return () => {};
     const loop = M.loop !== false;
     let t = 0, playing = false, audio = null, last = -2;
-    const off = +M.lyricsOffset || 0;
-    const setLyrics = arr => { L = arr.map(l => [l[0] + off, l[1]]).sort((a, b) => a[0] - b[0]); last = -2; };
-    setLyrics(L);
-    // Opened by double-click (file://)? Browsers block reading song.txt, so let the user pick it once.
-    const needPick = !L.length && location.protocol === "file:";
-    if (needPick) {
-      const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".txt,.lrc"; inp.hidden = true; document.body.appendChild(inp);
-      inp.onchange = async () => { const f = inp.files[0]; if (!f) return; const p = parseLRC(await f.text()); if (p.length) { setLyrics(p); tick(true); } };
-      $("#l1").style.cursor = "pointer"; $("#l1").onclick = () => inp.click();
-    }
     if (M.src) {
-      audio = new Audio(M.src); audio.loop = loop; audio.volume = vol; audio.preload = "auto";
+      audio = new Audio(); audio.loop = loop; audio.volume = vol; audio.preload = "auto"; audio.src = M.src;
       audio.addEventListener("error", () => { audio = null; curAudio = null; });
       audio.addEventListener("loadedmetadata", () => { if (audio) $("#td").textContent = fmt(audio.duration); });
       audio.addEventListener("ended", () => ui(false));
@@ -125,7 +122,7 @@
       let i = -1; L.forEach((l, k) => { if (t >= l[0]) i = k; });
       if (i !== last || force) {
         setLine("#l0", L[i - 1] ? L[i - 1][1] : ""); setLine("#l2", L[i + 1] ? L[i + 1][1] : "");
-        setLine("#l1", L[i] ? L[i][1] : (L.length ? "" : (needPick ? "Click to load lyrics (song.txt)" : "\u266A")), true); last = i;
+        setLine("#l1", L[i] ? L[i][1] : (L.length ? "" : "\u266A"), true); last = i;
       }
     }
     setInterval(tick, 100); tick(true);
@@ -133,18 +130,20 @@
     $("#prev").onclick = () => seek(0);
     $("#next").onclick = () => seek(t + 10);
     $("#bar").onclick = e => { const r = e.currentTarget.getBoundingClientRect(); seek((e.clientX - r.left) / r.width * dur()); };
-    // pause when the tab is hidden, resume when it comes back
+    // pause when the tab is hidden, resume when it comes back (also pauses the background video)
     let resume = false;
     document.addEventListener("visibilitychange", () => {
+      if (bgVideo) document.hidden ? bgVideo.pause() : bgVideo.play().catch(() => {});
       if (M.pauseOnHidden === false) return;
       if (document.hidden) { resume = playing; if (playing) setPlay(false); }
       else if (resume) { resume = false; setPlay(true); }
     });
     if (M.autoplay !== false) {
-      setPlay(true); // works if the browser allows it, otherwise falls back to the first click
+      setPlay(true); // allowed if the browser permits it, otherwise starts on the first click/tap
       const go = e => { if (!playing && !e.target.closest(".ctl,.vol")) setPlay(true); };
       addEventListener("pointerdown", go, { once: true }); addEventListener("keydown", go, { once: true });
     }
+    return l => { L = l; last = -2; tick(true); }; // lets late-loading lyrics in
   }
 
   /* ---------- volume ---------- */
@@ -181,7 +180,7 @@
     });
   }
 
-  /* ---------- background (image / gif / video / animated canvas) ---------- */
+  /* ---------- background: poster first, then video / image / animated canvas ---------- */
   const cv = $("#bg"), cx = cv.getContext("2d"), fx = $("#fx"), fc = fx.getContext("2d");
   let W, H, stars = [], P = [], customBg = false;
   function size() {
@@ -190,20 +189,25 @@
   }
   addEventListener("resize", size); size();
 
-  function initBg() {
-    const b = C.background || {}, el = $("#bgimg");
-    if (!b.src) return;
-    el.style.setProperty("--dim", b.dim ?? .3);
-    const done = () => { customBg = true; el.style.opacity = 1; if (!b.canvasOverlay) cv.style.display = "none"; };
-    if (/\.(mp4|webm|ogv)(\?.*)?$/i.test(b.src)) {
+  const bgEl = $("#bgimg");
+  const bgShow = () => { customBg = true; bgEl.style.opacity = 1; if (!B.canvasOverlay) cv.style.display = "none"; };
+  function bgPoster() { // tiny image, loaded right away
+    if (!B.src) return;
+    bgEl.style.setProperty("--dim", B.dim ?? .3);
+    if (B.poster) { const im = new Image(); im.onload = () => { bgEl.style.backgroundImage = `url("${B.poster}")`; bgEl.style.backgroundSize = B.fit || "cover"; bgShow(); }; im.src = B.poster; }
+  }
+  function bgMedia() { // heavy file, started after the page is revealed
+    if (!B.src) return;
+    if (/\.(mp4|webm|ogv)(\?.*)?$/i.test(B.src)) {
       const v = document.createElement("video");
-      Object.assign(v, { src: b.src, autoplay: true, muted: true, loop: true, playsInline: true });
-      v.style.objectFit = b.fit === "contain" ? "contain" : "cover";
-      v.onloadeddata = () => { el.prepend(v); done(); v.play().catch(() => {}); };
+      Object.assign(v, { src: B.src, autoplay: true, muted: true, loop: true, playsInline: true, preload: "auto" });
+      v.setAttribute("disablepictureinpicture", ""); v.style.objectFit = B.fit === "contain" ? "contain" : "cover";
+      v.style.opacity = 0; v.style.transition = "opacity .8s";
+      v.addEventListener("loadeddata", () => { bgEl.prepend(v); bgVideo = v; requestAnimationFrame(() => v.style.opacity = 1); bgShow(); v.play().catch(() => {}); }, { once: true });
     } else {
       const im = new Image();
-      im.onload = () => { el.style.backgroundImage = `url("${b.src}")`; el.style.backgroundSize = b.fit || "cover"; done(); };
-      im.src = b.src; // if it fails to load, the animated canvas stays
+      im.onload = () => { bgEl.style.backgroundImage = `url("${B.src}")`; bgEl.style.backgroundSize = B.fit || "cover"; bgShow(); };
+      im.src = B.src; // if it fails to load, the animated canvas stays
     }
   }
   const hash = n => { const s = Math.sin(n * 127.1) * 43758.5; return s - Math.floor(s); };
@@ -221,8 +225,9 @@
     if (P.length > 160) P.splice(0, P.length - 160);
   });
   function frame(ms) {
+    if (document.hidden) return requestAnimationFrame(frame);
     const tm = ms / 50;
-    if (!customBg || (C.background || {}).canvasOverlay) {
+    if (!customBg || B.canvasOverlay) {
       const full = !customBg;
       if (full) { cx.fillStyle = "#000"; cx.fillRect(0, 0, W, H); } else cx.clearRect(0, 0, W, H);
       cx.strokeStyle = "rgba(255,255,255,.06)"; cx.lineWidth = 6;
@@ -241,5 +246,23 @@
     requestAnimationFrame(frame);
   }
 
-  render(); initBg(); initTilt(); initPlayer(); requestAnimationFrame(frame);
+  /* ---------- boot: skeleton -> wait for critical stuff -> reveal -> load heavy media ---------- */
+  async function boot() {
+    requestAnimationFrame(frame);
+    bgPoster();
+    const lyricsP = loadLyrics();                       // fetched in parallel with everything else
+    const critical = Promise.all([sheetReady("#fa"), sheetReady("#gf")]).then(() => Promise.all([
+      imgReady(C.avatar || C.avatarFallback), imgReady(M.cover),
+      fontReady('900 16px "Font Awesome 6 Free"'), fontReady('400 16px "Font Awesome 6 Brands"'),
+      fontReady("600 20px Lora"), fontReady("500 16px 'Space Grotesk'")
+    ]));
+    await Promise.race([critical, wait(3500)]);          // never wait more than 3.5s
+    render(); initTilt();
+    const setL = initPlayer(await Promise.race([lyricsP, wait(2000).then(() => [])]));
+    lyricsP.then(l => { if (l.length) setL(l); });
+    document.body.classList.add("ready");                // skeleton fades out, cards animate in
+    setTimeout(() => $("#sk") && $("#sk").remove(), 700);
+    bgMedia();
+  }
+  boot();
 })();

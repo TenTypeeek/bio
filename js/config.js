@@ -8,7 +8,7 @@ window.CONFIG = {
   name: "TenTýpeeek",
   location: "Slovakia",              // set "" to hide
   bio: "Just Do It",                 // supports :emoji: tokens
-  avatar: "assets/images/avatar.png",
+  avatar: "assets/images/avatar.webp",
   avatarFallback: "https://cdn.discordapp.com/avatars/1006910367978504192/2f0d426d47558b0324aa5f607a4a7980.png",
 
   // Language picker next to the location. "code" = file name in assets/emojis/ (code.png)
@@ -20,10 +20,11 @@ window.CONFIG = {
   showViews: false,
   views: 1,
 
-  // Background: .png .jpg .webp .gif (animated gifs work) or .mp4 / .webm (video).
+  // Background: .mp4 / .webm (best: small + fast), or .png .jpg .webp .gif.
   // Leave src "" to use the built-in animated stars + mountains.
   background: {
-    src: "assets/images/background.gif",
+    src: "assets/images/background.mp4",      // mp4/webm loads ~3x faster than a gif
+    poster: "assets/images/background-poster.webp",  // shown instantly while the video loads
     fit: "cover",                    // cover | contain | 100% 100%
     dim: 0.15,                       // 0 - 1 darkness overlay on top of the image
     canvasOverlay: false             // true = draw the animated stars on top of your image too
@@ -57,13 +58,14 @@ window.CONFIG = {
   ],
 
   badges: [
-    { icon: "fa-solid fa-leaf", title: "November", desc: "Claimed the November seasonal badge." }
+    { icon: "fa-solid fa-award", title: "NNN Survivor 24", desc: "Survived No Nut November 2024" },
+    { icon: "fa-solid fa-trophy", title: "NNN Survivor 25", desc: "Survived No Nut November 2025" }
   ],
 
   music: {
     title: "BISEXUÁLKA",
     artist: "Riad",
-    cover: "assets/images/cover.png",
+    cover: "assets/images/cover.webp",
     src: "assets/audio/song.mp3",
     loop: true,                      // song restarts automatically
     autoplay: true,                  // starts on the first click/tap (browsers block sound before that)
